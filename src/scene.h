@@ -104,6 +104,8 @@ enum class DecalMode { Project, Quad, None };
 struct Options {
     bool include_inactive = false;
     bool all_lods = false;
+    int lod = 0;        // LOD level to export from each LODGroup (the last one if it has fewer)
+    int tree_lod = -1;  // the same for terrain-painted tree/grass prefabs; -1 = as `lod`
     bool colliders = true;   // collider-only geometry as <name>_col objects
     bool flatten = true;     // every object at the root with its world transform
     bool triggers = false;

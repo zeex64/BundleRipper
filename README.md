@@ -19,6 +19,14 @@ BundleRipper <map file or folder> [options]
   --no-textures             geometry and material colours only
   --include-inactive        also export disabled GameObjects (tagged xl_inactive)
   --all-lods                export every LOD level, not just LOD0
+  --lod <n>                 export LOD level n of every LODGroup instead of LOD0 (the last
+                            level when a group has fewer)
+  --tree-lod <n>            LOD level for the trees and grass painted on Unity terrains
+                            (default: same as --lod)
+  --simplify <mm>           mesh simplification limit in world millimetres (default 1)
+  --no-simplify             lossless clean-up only (weld duplicate vertices, drop degenerate
+                            triangles, GPU vertex order)
+  --no-optimize             write meshes exactly as decoded
   --no-colliders            leave out the collision-only <name>_col objects; the visible
                             meshes then take over their collision (sk8_collision_mode)
   --triggers                include trigger colliders
@@ -71,6 +79,29 @@ leaves vertex colours and the occlusion link out, and writes cut-out alpha as gl
 (so Blender links alpha directly instead of building clip nodes). Those cut-out materials
 carry `sk8_material.alpha = 2` (mask) and `alpha_cutoff`, which ReSkate Studio honours, plus
 `xl_alpha_mode`/`xl_alpha_cutoff`. In Blender they show the Blended render method.
+
+## Mesh optimisation
+
+On by default; every shared mesh is processed once:
+
+1. **Lossless clean-up.** Vertices identical in everything written are merged, and zero-area
+   and repeated triangles are dropped. Unity's extra UV sets (usually lightmap UVs) are dropped
+   when no material samples them, and vertex colours are dropped unless `--vertex-colors` is on.
+   Triangles and vertices are then reordered for the GPU vertex cache.
+2. **Simplification within `--simplify` millimetres** (default 1), measured in world space for
+   the largest placed copy. Open edges, material borders and UV/normal seams are locked, so
+   nothing cracks or slides. meshoptimizer proposes each result. Every vertex it removed, and
+   the centre of every triangle it replaced, must then lie within the limit of the new surface,
+   with the normal within 3° and the UVs within one texel of a 1024 texture (after tiling).
+   Spots that fail are pinned and the submesh is simplified again; a submesh that never passes
+   stays as it was. Decals (2 mm above their surface) are only cleaned up, not simplified.
+
+Checked against the unoptimised meshes, with a brute-force closest-point test on the worst
+samples: the surface stays within about 1.3 mm everywhere and 1 mm at 99.9% of points.
+Flat and over-tessellated geometry (terrain grids, bowls, sculpted rocks, jump lines) often
+halves. Foliage cards and trees barely change, because every blade and leaf is an open card
+already at its minimum. For foliage, the lever is the author's own lower LODs: `--tree-lod 1`
+takes The Lost Loop's 11,000 grass clumps from 2,592 to 864 triangles each.
 
 Custom properties on objects (glTF extras): `xl_layer`, `xl_tag` (Unity layer and tag
 numbers), `xl_collider`, `xl_trigger`, `xl_decal`, `xl_spline*`, `xl_inactive`, and
@@ -126,4 +157,6 @@ a single exe with the CRT linked statically.
 
 LZ4 (BSD-2), LZMA SDK LzmaDec (public domain), miniz (MIT), bcdec (MIT/Unlicense),
 Unity crunch decoder `crn_decomp.h` (zlib), ASTC/ETC/EAC decoders from texture2ddecoder
-(`third_party/t2d`, MIT). Licences are in `third_party/`.
+(`third_party/t2d`, MIT), meshoptimizer 1.3 (`third_party/meshoptimizer`, MIT; its
+simplifier's quadrics are changed to double precision: in float, centimetre-sized error on a
+mesh hundreds of metres across rounds to zero). Licences are in `third_party/`.

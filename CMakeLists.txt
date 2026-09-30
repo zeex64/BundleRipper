@@ -11,9 +11,15 @@ add_library(xl_third_party STATIC
     third_party/lzma/LzmaDec.c
     third_party/miniz/miniz.c
     third_party/t2d/astc.cpp
-    third_party/t2d/etc.cpp)
+    third_party/t2d/etc.cpp
+    third_party/meshoptimizer/allocator.cpp
+    third_party/meshoptimizer/indexgenerator.cpp
+    third_party/meshoptimizer/simplifier.cpp
+    third_party/meshoptimizer/vcacheoptimizer.cpp
+    third_party/meshoptimizer/vfetchoptimizer.cpp)
 target_include_directories(xl_third_party PUBLIC
-    third_party/lz4 third_party/lzma third_party/miniz third_party/bcdec third_party/crunch third_party/t2d)
+    third_party/lz4 third_party/lzma third_party/miniz third_party/bcdec third_party/crunch third_party/t2d
+    third_party/meshoptimizer)
 target_compile_definitions(xl_third_party PUBLIC MINIZ_NO_ARCHIVE_APIS MINIZ_NO_STDIO MINIZ_NO_TIME)
 if(MSVC)
     target_compile_options(xl_third_party PRIVATE /W0)
@@ -28,7 +34,8 @@ add_executable(BundleRipper
     src/scene.cpp
     src/gltf.cpp
     src/curves_obj.cpp
-    src/grindlines.cpp)
+    src/grindlines.cpp
+    src/optimize.cpp)
 target_link_libraries(BundleRipper PRIVATE xl_third_party)
 if(MSVC)
     target_compile_options(BundleRipper PRIVATE /W3 /utf-8 /permissive- /MP)

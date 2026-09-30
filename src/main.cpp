@@ -8,12 +8,14 @@
 #include "gltf.h"
 #include "images.h"
 #include "log.h"
+#include "optimize.h"
 #include "scene.h"
 #include "texture.h"
 #include "unity.h"
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -38,6 +40,16 @@ const char* kUsage =
     "  --no-textures             geometry and material colours only\n"
     "  --include-inactive        also export disabled GameObjects (tagged xl_inactive)\n"
     "  --all-lods                export every LOD level, not just LOD0\n"
+    "  --lod <n>                 export LOD level n of every LODGroup instead of LOD0 (the last\n"
+    "                            level when a group has fewer)\n"
+    "  --tree-lod <n>            LOD level for the trees and grass painted on Unity terrains\n"
+    "                            (default: same as --lod)\n"
+    "  --simplify <mm>           mesh simplification limit in world millimetres (default 1): drops\n"
+    "                            vertices only where the surface moves less than this and normals\n"
+    "                            and UVs stay put; open edges, seams and material borders are kept\n"
+    "  --no-simplify             lossless clean-up only (weld duplicate vertices, drop degenerate\n"
+    "                            triangles, GPU vertex order)\n"
+    "  --no-optimize             write meshes exactly as decoded\n"
     "  --no-colliders            leave out the collision-only <name>_col objects; the visible meshes\n"
     "                            then take over their collision (sk8_collision_mode)\n"
     "  --triggers                include trigger colliders\n"
@@ -157,6 +169,7 @@ int run(int argc, wchar_t** argv) {
     bool list = false;
     Options opt;
     GltfOptions gltf;
+    OptimizeOptions optimize;
     for (int i = 1; i < argc; ++i) {
         std::wstring a = argv[i];
         auto next = [&]() -> std::wstring {
@@ -175,6 +188,11 @@ int run(int argc, wchar_t** argv) {
         else if (a == L"--no-textures") opt.textures = false;
         else if (a == L"--include-inactive") opt.include_inactive = true;
         else if (a == L"--all-lods") opt.all_lods = true;
+        else if (a == L"--lod") opt.lod = std::max(0, std::stoi(next()));
+        else if (a == L"--tree-lod") opt.tree_lod = std::max(0, std::stoi(next()));
+        else if (a == L"--simplify") optimize.max_error = std::max(0.0, std::stod(next())) / 1000.0;
+        else if (a == L"--no-simplify") optimize.max_error = 0;
+        else if (a == L"--no-optimize") optimize.enabled = false;
         else if (a == L"--colliders") opt.colliders = true;
         else if (a == L"--no-colliders") opt.colliders = false;
         else if (a == L"--keep-hierarchy") opt.flatten = false;
@@ -259,6 +277,23 @@ int run(int argc, wchar_t** argv) {
     if (st.empty_meshes) log_info("  %zu meshes are empty in the map itself (skipped)", st.empty_meshes);
     if (st.terrains) log_info("  %zu Unity terrain(s) exported as meshes, %zu terrain trees placed", st.terrains, st.trees);
     log_info("  (%.1fs)", secs());
+
+    if (optimize.enabled) {
+        optimize.keep_colors = gltf.vertex_colors;
+        if (optimize.max_error > 0) log_info("optimizing meshes (simplify within %g mm)", optimize.max_error * 1000);
+        else log_info("optimizing meshes (lossless)");
+        OptimizeStats os;
+        optimize_meshes(scene, optimize, os);
+        auto pct = [](size_t a, size_t b) { return b ? 100.0 * (double)a / (double)b : 100.0; };
+        log_info("  %zu meshes: %zu -> %zu vertices (%.0f%%), %zu -> %zu triangles (%.0f%%); %zu simplified",
+                 os.meshes, os.vertices_before, os.vertices_after, pct(os.vertices_after, os.vertices_before),
+                 os.triangles_before, os.triangles_after, pct(os.triangles_after, os.triangles_before), os.simplified);
+        log_info("  triangles drawn over every placed copy: %zu -> %zu (%.0f%%)", os.drawn_before, os.drawn_after,
+                 pct(os.drawn_after, os.drawn_before));
+        if (os.kept_whole)
+            log_verbose("  %zu submeshes kept whole: no simplification of them stayed within the limit", os.kept_whole);
+        log_info("  (%.1fs)", secs());
+    }
 
     if (opt.textures) {
         log_info("converting %zu textures", scene.images.size());

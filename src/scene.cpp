@@ -1012,20 +1012,55 @@ void Builder::load_hierarchy() {
     }
     st_.game_objects = gos_.size();
 
-    // LOD levels past the first are left out unless asked for.
-    if (!opt_.all_lods)
+    // One level per LODGroup: LOD0 unless --lod (or --tree-lod, for the prefabs painted on
+    // terrains) picks a lower-detail one. Renderers only in the other levels are left out.
+    if (!opt_.all_lods) {
+        std::unordered_set<ObjRef, ObjRefHash> tree_roots;
+        if (opt_.tree_lod >= 0 && opt_.tree_lod != opt_.lod)
+            for (auto& ref : db_.objects_of(kTerrainData)) {
+                try {
+                    Value td = db_.read(ref);
+                    for (auto& p : td["m_DetailDatabase"]["m_TreePrototypes"].items) {
+                        auto g = gos_.find(db_.resolve(ref.file, p["prefab"]));
+                        if (g != gos_.end() && g->second.transform.valid()) tree_roots.insert(g->second.transform);
+                    }
+                } catch (const std::exception&) {
+                }
+            }
+        auto in_tree = [&](ObjRef go) {
+            auto g = gos_.find(go);
+            ObjRef x = g != gos_.end() ? g->second.transform : ObjRef{};
+            for (int depth = 0; x.valid() && depth < 256; ++depth) {
+                if (tree_roots.count(x)) return true;
+                auto it = xfs_.find(x);
+                if (it == xfs_.end()) break;
+                x = it->second.father;
+            }
+            return false;
+        };
         for (auto& ref : db_.objects_of(kLODGroup)) {
             Value v = db_.read(ref);
             auto& lods = v["m_LODs"].items;
-            for (size_t l = 1; l < lods.size(); ++l)
+            if (lods.empty()) continue;
+            bool tree = !tree_roots.empty() && in_tree(db_.resolve(ref.file, v["m_GameObject"]));
+            size_t keep = std::min((size_t)std::max(tree ? opt_.tree_lod : opt_.lod, 0), lods.size() - 1);
+            std::unordered_set<ObjRef, ObjRefHash> kept;
+            for (;; --keep) {  // a level without mesh renderers (culled, billboard) falls back a level
+                kept.clear();
+                for (auto& r : lods[keep]["renderers"].items) {
+                    ObjRef rr = db_.resolve(ref.file, r["renderer"]);
+                    int cls = rr.valid() ? db_.class_of(rr) : 0;
+                    if (cls == kMeshRenderer || cls == kSkinnedMeshRenderer) kept.insert(rr);
+                }
+                if (!kept.empty() || keep == 0) break;
+            }
+            for (size_t l = 0; l < lods.size(); ++l)
                 for (auto& r : lods[l]["renderers"].items) {
                     ObjRef rr = db_.resolve(ref.file, r["renderer"]);
-                    bool in_lod0 = false;
-                    for (auto& r0 : lods[0]["renderers"].items)
-                        in_lod0 = in_lod0 || db_.resolve(ref.file, r0["renderer"]) == rr;
-                    if (rr.valid() && !in_lod0) lod_skip_.insert(rr);
+                    if (rr.valid() && !kept.count(rr)) lod_skip_.insert(rr);
                 }
         }
+    }
 }
 
 const M4& Builder::world(const ObjRef& ref) {
