@@ -295,7 +295,7 @@ const char* texture_format_name(int f) {
     }
 }
 
-bool decode_texture(const Database& db, ObjRef ref, int max_size, Image& out, std::string& why) {
+bool decode_texture(const Database& db, ObjRef ref, int max_size, Image& out, std::string& why, int face) {
     if (ref.builtin()) { why = "built-in texture"; return false; }
     Value t = db.read(ref);
     if (t.is_null()) { why = "missing texture"; return false; }
@@ -314,8 +314,10 @@ bool decode_texture(const Database& db, ObjRef ref, int max_size, Image& out, st
     }
     if (!data || size == 0 || info.width <= 0 || info.height <= 0) { why = "no image data"; return false; }
     int f = info.format;
-    if (f == kDXT1Crunched || f == kDXT5Crunched || f == kETC_RGB4Crunched || f == kETC2_RGBA8Crunched)
+    if (f == kDXT1Crunched || f == kDXT5Crunched || f == kETC_RGB4Crunched || f == kETC2_RGBA8Crunched) {
+        if (face) { why = "crunched cubemap faces are not supported"; return false; }
         return decode_crunched(data, size, max_size, out, why);
+    }
 
     int bb = block_bytes(f), pb = pixel_bytes(f);
     Codec codec = codec_of(f);
@@ -324,12 +326,19 @@ bool decode_texture(const Database& db, ObjRef ref, int max_size, Image& out, st
         return false;
     }
     int level = 0;
-    size_t offset = 0;
     auto level_size = [&](int l) -> size_t {
         int w = std::max(1, info.width >> l), h = std::max(1, info.height >> l);
         if (codec.kind) return (size_t)((w + codec.bw - 1) / codec.bw) * ((h + codec.bh - 1) / codec.bh) * codec.bytes;
         return bb ? (size_t)((w + 3) / 4) * ((h + 3) / 4) * bb : (size_t)w * h * pb;
     };
+    size_t offset = 0;
+    if (face > 0) {  // skip the faces before it, each a whole mip chain
+        size_t chain = 0;
+        for (int l = 0; l < info.mips; ++l) chain += level_size(l);
+        if (chain * (face + 1) > size) { why = "cubemap face " + std::to_string(face) + " is missing"; return false; }
+        offset = chain * face;
+        data += offset, size -= offset, offset = 0;
+    }
     while (max_size > 0 && level + 1 < info.mips &&
            std::max(info.width >> level, info.height >> level) > max_size &&
            offset + level_size(level) + level_size(level + 1) <= size) {

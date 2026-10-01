@@ -71,6 +71,9 @@ struct Json {
             char buf[40];
             std::snprintf(buf, sizeof buf, "%.9g", n);
             out += buf;
+            bool point = false;  // keep a decimal point: readers that type values (Blender) see a float
+            for (const char* c = buf; *c; ++c) point = point || *c == '.' || *c == 'e' || *c == 'E';
+            if (!point) out += ".0";
             break;
         }
         case Str: quote(out, s); break;

@@ -161,6 +161,12 @@ bool process(const Database& db, ImageJob& job, int max_size, std::string& why) 
         break;
     }
     }
+    if (job.keep_pixels) {
+        job.px_w = out.w;
+        job.px_h = out.h;
+        job.pixels = std::move(out.px);
+        return true;
+    }
     job.png = encode_png(out, channels);
     return !job.png.empty();
 }

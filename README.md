@@ -1,51 +1,145 @@
-# BundleRipper
+# Spotbuilder
 
-Rips whole levels out of Unity asset bundles to a single binary glTF (`.glb`) that imports
-straight into Blender: meshes, PBR materials, textures, terrain and terrain trees,
-colliders, decals, grind splines and lights. Built for Skater XL mod maps (HDRP, URP and
-built-in shaders, Unity 2019-2022), and it works on scene bundles from other Unity games too.
+*(formerly BundleRipper)*
+
+A map editor for bringing levels from other games into Skate. It opens whole levels from Unity
+asset bundles (meshes, PBR materials, textures, terrain and terrain trees, colliders, decals,
+grind splines and lights), lets you set them up in 3D (ReSkate Studio settings, spawn, bus stops,
+lights, audio volumes, grind curves, NPC routes, a time-of-day lighting preview), and exports a
+single binary glTF (`.glb`) for Blender or, with ReSkate Studio installed, builds a Skate mod
+directly. Built for Skater XL mod maps (HDRP, URP and built-in shaders, Unity 2019-2022), and it
+works on scene bundles from other Unity games too.
 
 ## Use
 
-Drag a map file (e.g. `BerlinXL V2 by GyOm`) onto `BundleRipper.exe`. It writes
-`<map>.glb` next to the map. From a terminal:
+**Window:** double-click `Spotbuilder.exe`. It is a scene editor: open or drop a map (a bundle
+file, or a folder of bundles) and it loads in 3D with the current options, the way the export
+will build it. **Export...** (Ctrl+Enter) opens the Export window: pick a **.glb file** or a
+**Skate mod** (below), each with its own options, and go. **Settings** pulls out how the map is
+ripped (textures, objects, LODs, optimisation, splines, terrain plants), which applies to both.
+The window remembers its settings (`%APPDATA%\Spotbuilder\settings.txt`, stored as
+command-line arguments) and reopens the last map.
+
+- **View:** hold the right mouse button with WASD/QE to fly (Shift faster, wheel sets the
+  speed); wheel to zoom, middle mouse to pan, Alt + left mouse to orbit, F to frame. Toggles
+  for textures, lighting, wireframe and hidden objects.
+- **Object list:** Markers and Curves (what you added: spawn, bus stops, lights, audio volumes,
+  grind curves, NPC routes; **+** adds one), then the map's Level (Unity's hierarchy), Terrain,
+  Terrain plants (by type), Collision, Decals, Lights and Splines (each spline listed), each with
+  an eye to show or hide it. Drag the gaps beside the list and the inspector to resize them
+  (double-click resets).
+- **Live LODs:** every LOD level is loaded, so the LOD settings and each plant type's own LOD
+  (the dropdown on its row) switch instantly.
+- **Inspector:** click anything in the view or the list. Objects get two tabs: *Studio
+  settings* (collision, gameplay, impact audio, contact physics and the materials, in sections
+  that fold; a blue dot marks one you changed) and *Details* (transform, mesh, ripped
+  properties). With nothing selected it has buttons to add each kind of marker or curve.
+- **Selecting several:** Ctrl+click adds or removes (in the view or the list), Shift+click
+  selects a range of list rows, and right-click opens a menu for what is under the mouse:
+  select all of its kind (decals, collision objects, map/auto splines, lights...), all with the
+  same mesh or material, everything under it, or every copy of a plant; switch settings for the
+  whole selection (include in export, collision, collision only, invisible materials, grind on,
+  rail radius, surface); duplicate (Ctrl+D), delete, or add a marker or curve right where you
+  clicked. The inspector edits a selection together: what you change goes to all of them and
+  their other settings stay.
+- **Moving things:** selected markers, lights, audio volumes, curves (whole, or one point) and
+  the map's own splines show arrows: drag one to slide along that axis, or drag the centre to
+  slide over the surfaces under the mouse. Several move together. The arrows sit on what you
+  picked by hand: after "select all of a kind" (or keep only) they stay there, so you can line
+  everything up from the one you were working on. Move... puts one on the next spot you click;
+  Del deletes; Esc deselects.
+- **Undo, copy and paste:** Ctrl+Z undoes any map edit (Ctrl+Y or Ctrl+Shift+Z redoes; also the
+  Undo and Redo buttons). A drag, a slider or a typed name is one step. Ctrl+C copies the
+  selection: placed and drawn things as themselves, a map object's, light's or spline's settings
+  as settings. Ctrl+V pastes things as new copies (over the view: their lowest point where the
+  mouse points; right-click has Paste here), or pastes copied settings onto the selected map
+  objects, lights or splines. Ctrl+X cuts. The clipboard is text, so it pastes into another map
+  too.
+- **Grind rails:** the collision rail ReSkate Studio builds under a grind curve (an 8-sided prism
+  of the rail radius hanging from the line) is drawn on selected curves, or on all of them with
+  the Grind rails toggle.
+- **Lighting:** the Lighting menu previews the map lit like Skate at morning, noon, afternoon,
+  evening or night, using the game's own values (sun direction, colour and lux, exposure range,
+  fog distance, from its environment assets), with sun shadows and every light (yours and the
+  map's) that shines at that time, with Studio's falloff. Lights are sorted into screen tiles
+  by depth each frame, so a pixel only adds the few lights that reach it (Shred Cavern's 590
+  lights: 16 ms down to under 3 ms). Exposure is approximate; Flat and Editor are the plain views.
+  The map's own point, spot and area lights load as editable lights in the Lights section, with
+  the map's values (place, aim, colour, intensity, range, cone or size): move, edit, copy or
+  delete them like added ones, and "Reset to the map's light" puts one back. Exports use them
+  in place of the originals; the file beside the map only keeps the ones you changed or deleted.
+  Suns stay the map's (the game lights its own). Right-click selects every light of a type.
+  Intensity goes to 1,000,000 cd and range to 1 km (Ctrl+click a slider to type any value).
+- **Sky:** the map's own skybox (a cubemap, panorama or six-sided material, or an HDRP HDRI sky)
+  shows behind it in the lighting preview, and a .glb export writes it as `<map>_sky.png`. It is
+  never put in a mod: ReSkate Studio cannot change Skate's sky, which comes with each time of day.
+- **Curves:** draw a grind curve or NPC route by clicking points along it (Backspace takes one
+  back, Enter finishes). Select a point by clicking its dot; Add points / Insert after / Delete
+  point / Reverse are in the inspector. The map's own and auto splines can be switched off per
+  spline, given Studio grind settings, or turned into an editable copy.
+- **Bottom strip:** the Output tab shows what is running across the whole width (step, a
+  progress bar with the newest message, time); click it for the steps, the result and the log.
+
+**Map edits (ReSkate Studio settings):** the inspector edits are saved beside the map
+(`<map>.spotbuilder.json`; edits saved under the old name, `<map>.bundleripper.json`, are still
+read and move to the new name on the next save) and baked into every export, from the window or the command line
+(`--edits <file>` uses another file, `--no-edits` ignores them). They become the glTF extras
+that ReSkate Studio reads after the .glb goes through Blender (Studio's converter reads the raw
+custom properties, so both the nested `sk8_object` / `sk8_material` dicts and the flat `sk8_*`
+keys are written):
+
+| Edit | Where | Exported as |
+|---|---|---|
+| Include in export (off) | object | the object and its children are left out |
+| Collision: triangle mesh / convex parts / convex hull / none (render only) / water | object | `sk8_object.collision_mode` (0-4) + `sk8_collision_mode` |
+| Collision only (not drawn) | object | its materials become invisible copies (`sk8_material.invisible`) |
+| Surface / sound (one of Studio's 279 native collision materials) | object or material | `collision_material` (packed) + `sk8_collision_material_packed` |
+| Round rail, hide from pause map | object | `sk8_object.round_rail`, `hide_from_pause_map` + `sk8_hide_from_pause_map` |
+| Override gameplay (jump pad, wipeout, stairs...), impact audio, contact physics | object | `sk8_object.custom_*` fields + `sk8_surface_profile_json` |
+| Collision only (invisible), transparency, shader type | material | `sk8_material.invisible`, `alpha`, `alpha_cutoff`, `domain` |
+| Player spawn | Markers | an empty named `spawn` facing the chosen way |
+| Bus stops | Markers | empties named `TravelPoint`, `TravelPoint.001`... with `bus_stop_name` / `bus_stop_shelter` |
+| Lights you add (point / spot / area: colour, intensity, range, cone or size, aim, times of day) | Markers | KHR punctual lights with `sk8_light_range`, `sk8_light_tod`; an area light goes out as a wide spot with `xl_area_size` and the mod build makes it a Blender area light |
+| The map's lights (made editable on load: everything an added light has) | Lights | added lights in place of the originals (unchanged ones export as they were) |
+| Audio volumes (tunnel / drips / custom / native region, box size, turn, mixing) | Markers | empties scaled to the box with `sk8_audio_*` keys |
+| Grind curves you draw (grindable, radius, surface) | Curves | mod build: curves with Studio's grind settings; .glb: `<name>_splines.obj` |
+| NPC routes (pedestrians / vehicles / buses, width, spacing, weight, speed, one way, stairs) | Curves | mod build only: curves with `sk8_npc_*` settings |
+| The map's splines: off, grind radius and surface, moved, editable copy | Splines | mod build: grind curves; .glb: left out of the .obj when off, moved in it |
+| Collider-only objects (`_col`) | Collision | their XL_Collision material is invisible in Studio by default (collision, nothing drawn); the material's switch can turn it back on |
+
+Place markers with the **+** on the Markers row: click a surface in the view; spawns, bus stops
+and audio volumes face the way the camera looks. Ripped empties that Studio would misread (named
+`spawn`, `TravelPoint...` or `..._prefab`) get a ` (ripped)` suffix.
+
+**Build a Skate mod:** pick **Skate mod** in the Export window (or `--build-mod`). The map is
+ripped into a staging folder (`%LOCALAPPDATA%\Spotbuilder\Builds\<name>`), Blender turns the
+.glb into a .blend (the edits become the Skate Map add-on's settings, and the grind curves and
+NPC routes become real curves), and ReSkate Studio's `reskate_cli compile-map` builds the mod
+and, with **Install into Skate** on, puts it in Skate's `Mods` folder (Skate must be closed).
+On the way, spot lights are cut to a quarter of Blender's power: Studio's lumens are read by the
+game as lumens / pi candela for a spot, so a glTF spot would otherwise come out 4x too bright.
+Blender, `reskate_cli.exe` and the game folder are found from Studio's settings
+(`%LOCALAPPDATA%\ReSkateStudio\settings.json`), a running ReSkate Studio and the usual install
+places; the Output card shows what was found, and the Skate mod options can point at them.
+The Skate mod options also set the mod name, pause map (3D/2D), time of day, global
+illumination, world streaming, Studio's mesh LODs and whether to keep `<map>.blend`.
+
+**Drop:** drag a map file (e.g. `BerlinXL V2 by GyOm`) onto `Spotbuilder.exe` to rip it with
+the defaults. It writes `<map>.glb` next to the map.
+
+**Command line:**
 
 ```
-BundleRipper <map file or folder> [options]
-
-  -o, --output <file.glb>   output path (default: <map>.glb next to the map)
-  --external-textures       write PNGs to <name>_textures\ instead of inside the .glb
-  --max-texture-size <px>   use smaller mip levels for textures bigger than this
-  --no-textures             geometry and material colours only
-  --include-inactive        also export disabled GameObjects (tagged xl_inactive)
-  --all-lods                export every LOD level, not just LOD0
-  --lod <n>                 export LOD level n of every LODGroup instead of LOD0 (the last
-                            level when a group has fewer)
-  --tree-lod <n>            LOD level for the trees and grass painted on Unity terrains
-                            (default: same as --lod)
-  --simplify <mm>           mesh simplification limit in world millimetres (default 1)
-  --no-simplify             lossless clean-up only (weld duplicate vertices, drop degenerate
-                            triangles, GPU vertex order)
-  --no-optimize             write meshes exactly as decoded
-  --no-colliders            leave out the collision-only <name>_col objects; the visible
-                            meshes then take over their collision (sk8_collision_mode)
-  --triggers                include trigger colliders
-  --keep-hierarchy          keep Unity's GameObject tree instead of flat world-space objects
-  --vertex-colors           keep mesh vertex colours (Blender multiplies them into base colour)
-  --standard-alpha          write cut-outs as glTF MASK (Blender adds Alpha Clip nodes)
-  --occlusion               link ambient occlusion too (Blender adds a glTF side node group)
-  --decals <mode>           project (default) | quad | none
-  --no-splines              leave out grind splines
-  --spline-meshes           also put the splines in the .glb as line meshes
-  --no-autosplines          don't write <name>_autosplines.obj
-  --autospline-all          look for grind lines on every collidable object
-  --terrain-resolution <n>  most grid squares per Unity terrain side (default 1024)
-  --no-trees                leave out trees painted on Unity terrains
-  --no-lights               leave out lights
-  --list                    print what the map contains and exit
-  --dump-textures <folder>  also save every texture as a PNG
-  -v, --verbose             more detail
+Spotbuilder <map file or folder> [options]
+Spotbuilder                        opens the window
+Spotbuilder --gui [map] [options]  opens the window with these settings filled in
 ```
+
+Any arguments other than `--gui` run the command line, which works in scripts and prints
+progress to the console. It applies the map edits saved beside the map too, and
+`--build-mod` builds the Skate mod instead of the .glb. `Spotbuilder --help` lists every
+option. The GUI's controls, `--help`, and the saved settings all come from one option table
+(`src/options.cpp`), so they always match.
 
 A folder input loads every bundle in it together (cross-bundle references resolve).
 
@@ -121,7 +215,7 @@ winding), so the scene reads the right way round (text on signs and decals is no
 
 ## Build
 
-Needs CMake and Visual Studio 2022 (C++). `build.bat` produces `bin\BundleRipper.exe`,
+Needs CMake and Visual Studio 2022 (C++). `build.bat` produces `bin\Spotbuilder.exe`,
 a single exe with the CRT linked statically.
 
 ## Format notes
@@ -157,6 +251,6 @@ a single exe with the CRT linked statically.
 
 LZ4 (BSD-2), LZMA SDK LzmaDec (public domain), miniz (MIT), bcdec (MIT/Unlicense),
 Unity crunch decoder `crn_decomp.h` (zlib), ASTC/ETC/EAC decoders from texture2ddecoder
-(`third_party/t2d`, MIT), meshoptimizer 1.3 (`third_party/meshoptimizer`, MIT; its
+(`third_party/t2d`, MIT), Dear ImGui 1.91.9b (`third_party/imgui`, MIT), meshoptimizer 1.3 (`third_party/meshoptimizer`, MIT; its
 simplifier's quadrics are changed to double precision: in float, centimetre-sized error on a
 mesh hundreds of metres across rounds to zero). Licences are in `third_party/`.

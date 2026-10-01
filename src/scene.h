@@ -5,11 +5,14 @@
 #include "mesh.h"
 #include "unity.h"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace xl {
+
+struct Edits;
 
 // One PNG to produce. Sources are decoded, combined per role, then encoded.
 struct ImageJob {
@@ -25,6 +28,10 @@ struct ImageJob {
     int wrap_u = 0, wrap_v = 0, filter = 1;
     bool ok = false;
     bool cutout = false;  // Color: alpha looks like a cut-out mask (leaves, fences)
+    // The scene view wants the pixels, not a PNG: RGBA rows bottom-up (as Unity stores them).
+    bool keep_pixels = false;
+    int px_w = 0, px_h = 0;
+    std::vector<uint8_t> pixels;
 };
 
 struct TexRef {
@@ -34,6 +41,7 @@ struct TexRef {
 
 struct OutMaterial {
     std::string name;
+    std::string key;  // stable identity across rips (source file + object id), for edits
     std::string shader;
     float base[4] = {1, 1, 1, 1};
     TexRef base_tex, normal_tex, orm_tex, emissive_tex;
@@ -56,6 +64,7 @@ struct OutMaterial {
 // segments with handles `left`/`right` at each point. Written to <map>_splines.obj.
 struct OutCurve {
     std::string name;
+    std::string key;  // stable identity (the spline object, or the object an auto spline was found on + index)
     bool bezier = false;
     bool closed = false;
     std::vector<V3> points, left, right;
@@ -75,10 +84,13 @@ struct OutLight {
     float intensity = 1;
     float range = 0;
     float inner = 0, outer = 0.785f;
+    bool area = false;            // a Unity area light (rectangle or disc), exported as an area light
+    float area_size[2] = {1, 1};  // metres
 };
 
 struct OutNode {
     std::string name;
+    std::string key;  // stable identity across rips (source file + object id), for edits
     V3 t;
     Quat r;
     V3 s{1, 1, 1};
@@ -106,6 +118,11 @@ struct Options {
     bool all_lods = false;
     int lod = 0;        // LOD level to export from each LODGroup (the last one if it has fewer)
     int tree_lod = -1;  // the same for terrain-painted tree/grass prefabs; -1 = as `lod`
+    std::map<std::string, int> plant_lod;  // per painted prefab name: its own LOD level (99 = lowest)
+    // Scene view: keep every LOD level, each renderer tagged with xl_lod_group / xl_lod_levels
+    // (bit mask) / xl_lod_count (and xl_plant), so the view can switch levels without a reload.
+    bool tag_lods = false;
+    const Edits* edits = nullptr;  // map edits to bake in (edits.h)
     bool colliders = true;   // collider-only geometry as <name>_col objects
     bool flatten = true;     // every object at the root with its world transform
     bool triggers = false;

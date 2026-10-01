@@ -398,7 +398,7 @@ GltfResult Writer::write() {
     Json doc = Json::object();
     Json asset = Json::object();
     asset.set("version", "2.0");
-    asset.set("generator", "BundleRipper");
+    asset.set("generator", "Spotbuilder");
     doc.set("asset", std::move(asset));
     doc.set("scene", 0);
     Json scene = Json::object();

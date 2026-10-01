@@ -9,7 +9,7 @@ namespace xl {
 size_t write_curves_obj(const std::vector<OutCurve>& curves, const std::filesystem::path& out) {
     std::ofstream f(out, std::ios::binary);
     if (!f) throw std::runtime_error("cannot write " + out.string());
-    f << "# BundleRipper grind splines: import in Blender with File > Import > Wavefront (.obj)\n";
+    f << "# Spotbuilder grind splines: import in Blender with File > Import > Wavefront (.obj)\n";
     char line[160];
     size_t written = 0, vertex = 0;
     for (const OutCurve& c : curves) {

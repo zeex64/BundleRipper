@@ -1,6 +1,20 @@
-# BundleRipper launch args
-Drag a map onto `BundleRipper.exe` for the defaults, or run:
-`BundleRipper <map file or folder> [options]`
+# Spotbuilder launch args (formerly BundleRipper)
+Double-click `Spotbuilder.exe` for the editor window: the map in 3D, live LODs, ReSkate Studio settings (collision, surfaces/sound, collision-only, player spawn, bus stops, lights, audio volumes, grind curves, NPC routes...) and every option below under **Settings**.
+Drag a map onto the exe to rip it with the defaults, or run:
+`Spotbuilder <map file or folder> [options]`
+`Spotbuilder --gui [map] [options]` opens the window with those settings filled in.
+
+## Skate mod (needs ReSkate Studio + Blender)
+- `--build-mod`: build a Skate mod instead of a .glb (rip, Blender .blend, Studio compile-map)
+- `--mod-name <name>`: mod folder name (default: the map's name)
+- `--no-deploy`: build it without installing into Skate's Mods folder (installing needs Skate closed)
+- `--pause-map <3d|2d>`, `--time-of-day <default|morning|noon|afternoon|evening|night>`
+- `--no-gi`: skip baking bounced light (faster builds)
+- `--streaming <auto|on|off>`: load big maps in cells around the player
+- `--no-mod-lods`: no Studio mesh LODs
+- `--keep-blend`: also save `<map>.blend` next to the map
+- `--package <folder>`: where Studio builds the mod
+- `--blender <exe>`, `--studio-cli <exe>`, `--game <folder>`: only if not found from Studio's settings
 
 ## Output
 - `-o <file.glb>` / `--output`: where to write the .glb (default: next to the map)
@@ -12,7 +26,8 @@ Drag a map onto `BundleRipper.exe` for the defaults, or run:
 - `--include-inactive`: also export disabled objects (tagged `xl_inactive`)
 - `--all-lods`: every LOD level, not just LOD0
 - `--lod <n>`: use LOD level n of every LOD group instead of LOD0
-- `--tree-lod <n>`: LOD level for trees/grass painted on terrains (on The Lost Loop, 1 halves the triangles drawn)
+- `--tree-lod <n>`: LOD level for trees/grass painted on terrains
+- `--plant-lod "<name>=<n>"`: LOD level for one painted tree/bush/grass type (`n` = a number, `lowest` or `default`); repeat per type. `--list` prints the type names and their LOD triangle counts
 - `--no-colliders`: skip the `_col` collision objects; visible meshes take over their collision
 - `--triggers`: include trigger colliders
 - `--decals <project|quad|none>`: decals cut onto surfaces (default), flat quads, or skipped
@@ -36,6 +51,10 @@ Drag a map onto `BundleRipper.exe` for the defaults, or run:
 - `--vertex-colors`: keep vertex colours (adds Color Attribute nodes)
 - `--standard-alpha`: cut-outs as glTF MASK (adds Alpha Clip nodes)
 - `--occlusion`: link ambient occlusion (adds a glTF node group)
+
+## Map edits
+- `--edits <file.json>`: apply these edits (default: `<map>.spotbuilder.json` beside the map, which the window saves)
+- `--no-edits`: ignore saved edits
 
 ## Info
 - `--list`: print what the map contains and exit

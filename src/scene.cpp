@@ -1,4 +1,5 @@
 #include "scene.h"
+#include "edits.h"
 #include "grindlines.h"
 #include "log.h"
 #include "texture.h"
@@ -339,6 +340,19 @@ private:
     std::unordered_map<ObjRef, Xf, ObjRefHash> xfs_;
     std::unordered_map<ObjRef, Go, ObjRefHash> gos_;
     std::unordered_set<ObjRef, ObjRefHash> lod_skip_;
+    struct LodTag {
+        int group = -1;
+        uint32_t levels = 0;  // bit per LOD level the renderer is in
+        int count = 0;
+    };
+    std::unordered_map<ObjRef, LodTag, ObjRefHash> lod_tags_;  // tag_lods: renderer -> its LOD group
+    std::unordered_map<int, std::string> lod_plant_;          // tag_lods: LOD group -> painted prefab name
+    int next_lod_group_ = 0;
+    // Stable identity of an object across rips: its file and path id.
+    std::string key_of(ObjRef r) const {
+        std::string file = r.file >= 0 && r.file < (int)db_.files.size() ? db_.files[r.file]->name : "builtin";
+        return file + "#" + std::to_string(r.id);
+    }
     std::unordered_map<ObjRef, std::shared_ptr<MeshData>, ObjRefHash> meshes_;
     std::unordered_map<ObjRef, int, ObjRefHash> materials_;
     std::unordered_map<ObjRef, std::string, ObjRefHash> shader_names_, script_names_;
@@ -355,6 +369,7 @@ private:
     std::unordered_map<ObjRef, int, ObjRefHash> terrain_layers_;
     int terrain_layer_material(ObjRef ref);
     void add_terrain(int node, const Go& go, ObjRef terrain, bool collides, bool tree_colliders, bool active);
+    void rename_studio_markers();
     std::vector<Projection> projections_;  // per material (missing = none)
     // Vertex-colour layer blend graphs: material -> (vertex colour channel, layer material);
     // channel -1 is the base layer.
@@ -522,6 +537,7 @@ int Builder::default_material() {
     if (default_material_ < 0) {
         OutMaterial m;
         m.name = "XL_Default";
+        m.key = "xl:default";
         m.base[0] = m.base[1] = m.base[2] = 0.8f;
         m.roughness = 0.8f;
         sc_.materials.push_back(m);
@@ -534,6 +550,7 @@ int Builder::default_material() {
 int Builder::collision_material() {
     if (collision_material_ < 0) {
         OutMaterial m;
+        m.key = "xl:collision";
         m.name = "XL_Collision";
         m.base[0] = 1.0f;
         m.base[1] = 0.25f;
@@ -543,6 +560,8 @@ int Builder::collision_material() {
         m.double_sided = true;
         m.roughness = 1;
         m.extras.set("xl_collision_material", true);
+        // Collider-only geometry: ReSkate Studio keeps its collision and draws nothing.
+        m.extras.child("sk8_material").set("invisible", true);
         sc_.materials.push_back(m);
         receives_decals_.push_back(false);
         collision_material_ = (int)sc_.materials.size() - 1;
@@ -579,6 +598,7 @@ int Builder::material(ObjRef ref) {
 
     OutMaterial om;
     om.name = m["m_Name"].s();
+    om.key = key_of(ref);
     om.shader = shader_name(db_.resolve(ref.file, m["m_Shader"]));
     std::map<std::string, TexSlot> tex;
     std::map<std::string, double> fl;
@@ -944,6 +964,7 @@ int Builder::material(ObjRef ref) {
             if (!lt) continue;
             OutMaterial lm = om;
             lm.name = om.name + " L" + std::to_string(n);
+            lm.key = om.key + "/L" + std::to_string(n);
             lm.orm_tex = {};
             lm.orm_has_occlusion = false;
             lm.metallic = 0;
@@ -1015,35 +1036,57 @@ void Builder::load_hierarchy() {
     // One level per LODGroup: LOD0 unless --lod (or --tree-lod, for the prefabs painted on
     // terrains) picks a lower-detail one. Renderers only in the other levels are left out.
     if (!opt_.all_lods) {
-        std::unordered_set<ObjRef, ObjRefHash> tree_roots;
-        if (opt_.tree_lod >= 0 && opt_.tree_lod != opt_.lod)
+        std::unordered_map<ObjRef, std::string, ObjRefHash> tree_roots;  // prefab root transform -> its name
+        if ((opt_.tree_lod >= 0 && opt_.tree_lod != opt_.lod) || !opt_.plant_lod.empty() || opt_.tag_lods)
             for (auto& ref : db_.objects_of(kTerrainData)) {
                 try {
                     Value td = db_.read(ref);
                     for (auto& p : td["m_DetailDatabase"]["m_TreePrototypes"].items) {
                         auto g = gos_.find(db_.resolve(ref.file, p["prefab"]));
-                        if (g != gos_.end() && g->second.transform.valid()) tree_roots.insert(g->second.transform);
+                        if (g != gos_.end() && g->second.transform.valid())
+                            tree_roots[g->second.transform] = g->second.name;
                     }
                 } catch (const std::exception&) {
                 }
             }
-        auto in_tree = [&](ObjRef go) {
+        // The painted prefab a GameObject belongs to, or null.
+        auto plant_of = [&](ObjRef go) -> const std::string* {
             auto g = gos_.find(go);
             ObjRef x = g != gos_.end() ? g->second.transform : ObjRef{};
             for (int depth = 0; x.valid() && depth < 256; ++depth) {
-                if (tree_roots.count(x)) return true;
+                auto root = tree_roots.find(x);
+                if (root != tree_roots.end()) return &root->second;
                 auto it = xfs_.find(x);
                 if (it == xfs_.end()) break;
                 x = it->second.father;
             }
-            return false;
+            return nullptr;
         };
         for (auto& ref : db_.objects_of(kLODGroup)) {
             Value v = db_.read(ref);
             auto& lods = v["m_LODs"].items;
             if (lods.empty()) continue;
-            bool tree = !tree_roots.empty() && in_tree(db_.resolve(ref.file, v["m_GameObject"]));
-            size_t keep = std::min((size_t)std::max(tree ? opt_.tree_lod : opt_.lod, 0), lods.size() - 1);
+            const std::string* plant = tree_roots.empty() ? nullptr : plant_of(db_.resolve(ref.file, v["m_GameObject"]));
+            if (opt_.tag_lods) {  // keep every level, tagged
+                int group = next_lod_group_++;
+                for (size_t l = 0; l < lods.size(); ++l)
+                    for (auto& r : lods[l]["renderers"].items) {
+                        ObjRef rr = db_.resolve(ref.file, r["renderer"]);
+                        if (!rr.valid()) continue;
+                        LodTag& t = lod_tags_[rr];
+                        t.group = group;
+                        t.levels |= 1u << std::min<size_t>(l, 31);
+                        t.count = (int)lods.size();
+                    }
+                if (plant) lod_plant_[group] = *plant;
+                continue;
+            }
+            int want = opt_.lod;
+            if (plant) {
+                auto own = opt_.plant_lod.find(*plant);
+                want = own != opt_.plant_lod.end() ? own->second : opt_.tree_lod >= 0 ? opt_.tree_lod : opt_.lod;
+            }
+            size_t keep = std::min((size_t)std::max(want, 0), lods.size() - 1);
             std::unordered_set<ObjRef, ObjRefHash> kept;
             for (;; --keep) {  // a level without mesh renderers (culled, billboard) falls back a level
                 kept.clear();
@@ -1095,6 +1138,7 @@ int Builder::visit(const ObjRef& ref, bool parent_active, int depth, const M4* p
     const Xf& x = xit->second;
     OutNode n;
     n.name = go.name;
+    n.key = key_of(ref);
     n.t = root ? root->t : x.t;
     n.r = root ? root->r : x.r;
     n.s = root ? root->s : x.s;
@@ -1174,6 +1218,13 @@ void Builder::add_renderer(int node, const Go& go, const M4& w, ObjRef renderer,
     if (lod_skip_.count(renderer)) {
         ++st_.skipped_lods;
         return;
+    }
+    if (auto tag = lod_tags_.find(renderer); tag != lod_tags_.end()) {
+        Json& ex = sc_.nodes[node].extras;
+        ex.set("xl_lod_group", tag->second.group);
+        ex.set("xl_lod_levels", (int64_t)tag->second.levels);
+        ex.set("xl_lod_count", tag->second.count);
+        if (auto plant = lod_plant_.find(tag->second.group); plant != lod_plant_.end()) ex.set("xl_plant", plant->second);
     }
     Value rv = db_.read(renderer);
     if (!rv["m_Enabled"].is_null() && !rv["m_Enabled"].truthy()) return;
@@ -1268,6 +1319,7 @@ int Builder::terrain_layer_material(ObjRef ref) {
     if (l.is_null()) return terrain_layers_[ref] = default_material();
     OutMaterial m;
     m.name = l["m_Name"].s().empty() ? "TerrainLayer" : l["m_Name"].s();
+    m.key = key_of(ref);
     m.extras.set("xl_terrain_layer", true);
     ObjRef diffuse = db_.resolve(ref.file, l["m_DiffuseTexture"]);
     ObjRef normal = db_.resolve(ref.file, l["m_NormalMapTexture"]);
@@ -1432,6 +1484,7 @@ void Builder::add_terrain(int node, const Go& go, ObjRef terrain, bool collides,
     om.materials = mats;
     OutNode tn;
     tn.name = go.name + "_terrain";
+    tn.key = sc_.nodes[node].key + "/terrain";
     tn.mesh = add_mesh("", std::move(om));
     tn.extras.set("xl_terrain", true);
     tn.extras.set("sk8_collision_mode", collides ? "triangle_mesh" : "none");
@@ -1459,12 +1512,16 @@ void Builder::add_terrain(int node, const Go& go, ObjRef terrain, bool collides,
     const auto& trees = dd["m_TreeInstances"].items;
     if (!opt_.trees || !draw_trees || !active || trees.empty()) return;
     std::vector<ObjRef> prototypes;
+    std::vector<std::string> prototype_names;
     for (auto& p : dd["m_TreePrototypes"].items) {
         auto g = gos_.find(db_.resolve(data_ref.file, p["prefab"]));
         prototypes.push_back(g != gos_.end() ? g->second.transform : ObjRef{});
+        prototype_names.push_back(g != gos_.end() ? g->second.name : std::string());
     }
     OutNode group;
     group.name = go.name + "_trees";
+    group.key = sc_.nodes[node].key + "/trees";
+    group.extras.set("xl_terrain_trees", true);
     int gi = add_node(std::move(group));
     sc_.nodes[node].children.push_back(gi);
     M4 tw = world(go.transform);
@@ -1482,6 +1539,7 @@ void Builder::add_terrain(int node, const Go& go, ObjRef terrain, bool collides,
         at.s = {ws, hs, ws};
         int ti = visit(prototypes[(size_t)index], true, 0, &tw, &at);
         if (ti < 0) continue;
+        sc_.nodes[ti].extras.set("xl_plant", prototype_names[(size_t)index]);
         sc_.nodes[gi].children.push_back(ti);
         ++placed;
     }
@@ -1525,9 +1583,11 @@ void Builder::autosplines() {
         auto lines = find_grind_lines(pos, tris);
         if (lines.empty()) continue;
         ++st_.autospline_objects;
+        int index = 0;
         for (auto& line : lines) {
             OutCurve c;
             c.name = inst.name + "_auto";
+            c.key = "auto:" + sc_.nodes[inst.node].key + ":" + std::to_string(index++);
             c.points = std::move(line);
             sc_.auto_curves.push_back(std::move(c));
             ++st_.autosplines;
@@ -1873,6 +1933,7 @@ void Builder::add_collider(int node, const Go& go, const M4& w, ObjRef c, int cl
     om.materials.assign(geo->subs.size(), collision_material());
     OutNode n;
     n.name = go.name + "_col";
+    n.key = sc_.nodes[node].key + "/col:" + std::to_string(c.id);
     n.mesh = add_mesh(key, std::move(om));
     ++st_.colliders_exported;
     n.extras.set("xl_collider", kind);
@@ -1892,7 +1953,14 @@ void Builder::add_light(int node, const Go& go, ObjRef c) {
     l.name = go.name;
     if (type == 0) l.type = 1;
     else if (type == 1) l.type = 2;
-    else l.type = 0;  // point, and area lights approximated as points
+    else l.type = 0;  // point; area lights carry their size (the Blender step makes real ones)
+    if (type == 3 || type == 4) {
+        l.area = true;
+        const Value& sz = lv["m_AreaSize"];
+        double w = sz["x"].num(1), h = sz["y"].num(1);
+        if (type == 4) w = h = 2 * lv["m_ShapeRadius"].num(sz["x"].num(0.5));
+        l.area_size[0] = (float)std::max(0.05, w), l.area_size[1] = (float)std::max(0.05, h);
+    }
     Color col = as_color(lv["m_Color"]);
     V3 k{1, 1, 1};
     if (lv["m_UseColorTemperature"].truthy()) k = blackbody(lv["m_ColorTemperature"].num(6500));
@@ -1908,8 +1976,14 @@ void Builder::add_light(int node, const Go& go, ObjRef c) {
     sc_.lights.push_back(l);
     OutNode n;
     n.name = go.name + "_light";
+    n.key = sc_.nodes[node].key + "/light";
     n.r = {0, 1, 0, 0};  // glTF lights shine down -Z, Unity's down +Z
     n.light = (int)sc_.lights.size() - 1;
+    if (l.type != 2 && l.range > 0) n.extras.set("sk8_light_range", (double)l.range);  // Studio's attenuation radius
+    if (l.area) {
+        n.extras.set("xl_area_size", Json::list((double)l.area_size[0], (double)l.area_size[1]));
+        n.extras.set("xl_area_intensity", (double)l.intensity);
+    }
     int ni = add_node(std::move(n));
     sc_.nodes[node].children.push_back(ni);
     ++st_.lights;
@@ -1980,6 +2054,7 @@ void Builder::add_spline(int node, const Go& go, const Value& mv, const M4& w) {
     // handles; Catmull-Rom and uniform B-spline convert exactly to Bezier handles.
     OutCurve curve;
     curve.name = go.name + "_spline";
+    curve.key = "map:" + sc_.nodes[node].key;
     curve.closed = closed;
     curve.bezier = type != 3;
     for (size_t i = 0; i < n; ++i) {
@@ -2015,6 +2090,7 @@ void Builder::add_spline(int node, const Go& go, const Value& mv, const M4& w) {
     om.materials = {default_material()};
     OutNode nn;
     nn.name = go.name + "_spline";
+    nn.key = sc_.nodes[node].key + "/spline";
     nn.mesh = add_mesh("", std::move(om));
     nn.extras.set("xl_spline", true);
     nn.extras.set("xl_spline_closed", closed);
@@ -2154,6 +2230,7 @@ void Builder::project_decals() {
         om.materials = {mat};
         OutNode n;
         n.name = d.name + "_decal";
+        n.key = sc_.nodes[d.node].key + "/decal";
         n.mesh = add_mesh("", std::move(om));
         n.extras.set("xl_decal", true);
         if (!d.active) n.extras.set("xl_inactive", true);
@@ -2175,6 +2252,7 @@ void Builder::flatten() {
         if (old[i].mesh >= 0 || old[i].light >= 0) {
             OutNode f;
             f.name = old[i].name;
+            f.key = old[i].key;
             f.mesh = old[i].mesh;
             f.light = old[i].light;
             f.extras = old[i].extras;
@@ -2200,6 +2278,23 @@ void Builder::flatten() {
     for (int r : roots) walk(r, M4{});
 }
 
+// Studio treats some empties specially by name: "spawn" is the player spawn, "TravelPoint..." a bus
+// stop, and any other "..._prefab" stops its export. Ripped objects with those names get a suffix
+// (only empties count; with flattening there are none).
+void Builder::rename_studio_markers() {
+    for (auto& n : sc_.nodes) {
+        if (n.mesh >= 0 || n.light >= 0) continue;
+        std::string name = lower(n.name);
+        size_t dot = name.rfind('.');
+        if (dot != std::string::npos && dot + 4 == name.size() && std::isdigit((unsigned char)name[dot + 1]) &&
+            std::isdigit((unsigned char)name[dot + 2]) && std::isdigit((unsigned char)name[dot + 3]))
+            name = name.substr(0, dot);
+        bool reserved = name == "spawn" || name.rfind("travelpoint", 0) == 0 ||
+                        (name.size() > 7 && name.compare(name.size() - 7, 7, "_prefab") == 0);
+        if (reserved) n.name += " (ripped)";
+    }
+}
+
 Scene Builder::run() {
     load_hierarchy();
     // Only scene files hold the level; prefabs in shared-asset files (terrain tree prototypes,
@@ -2223,7 +2318,10 @@ Scene Builder::run() {
     project_decals();
     resolve_pending_colliders();
     autosplines();
+    rename_studio_markers();
+    if (opt_.edits) apply_edits(sc_, *opt_.edits);
     if (opt_.flatten) flatten();
+    if (opt_.edits) add_markers(sc_, *opt_.edits);
     if (verbose_logging())
         for (auto& [layer, count] : layer_counts_) log_verbose("layer %d: %d objects", layer, count);
     return std::move(sc_);

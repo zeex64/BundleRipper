@@ -26,8 +26,9 @@ struct TexInfo {
 
 TexInfo texture_info(const Value& tex);
 const char* texture_format_name(int format);
-// Decodes the largest mip level no bigger than max_size (0 = full size).
-bool decode_texture(const Database& db, ObjRef ref, int max_size, Image& out, std::string& why);
+// Decodes the largest mip level no bigger than max_size (0 = full size). `face`: a cubemap's face
+// (0..5: +X -X +Y -Y +Z -Z), each stored with its own mip chain after the one before.
+bool decode_texture(const Database& db, ObjRef ref, int max_size, Image& out, std::string& why, int face = 0);
 
 // PNG bytes of an image (flipped to top-down rows); channels 3 or 4.
 std::vector<uint8_t> encode_png(const Image& img, int channels);

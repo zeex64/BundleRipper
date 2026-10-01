@@ -1,0 +1,4 @@
+// The exe icon (also the window icon: run_gui loads resource 1).
+1 ICON "Spotbuilder.ico"
+// The Blender step of a mod build (studio_build.cpp loads resource 2).
+2 RCDATA "..\src\blender\make_blend.py"
